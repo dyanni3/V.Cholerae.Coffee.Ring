@@ -1,0 +1,642 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Sat Dec  3 10:51:05 2016
+
+@author: dyanni3
+"""
+#%% imports and prep
+import numpy as np
+from numpy.random import rand as r
+from matplotlib import pyplot as plt
+from numpy.fft import fftn,fftshift
+from collections import defaultdict as d
+
+
+#%%
+class Lattice(object):
+    def __init__(self,size=5,radius=False,semi=False,killlist=None,slider=0,rb=False,\
+                 verbose=False,halfhalf=False,threed=False,redAdvantage=1,blueAdvantage=1,\
+                 defKillers=False,density=1,numRatio=1,coffee_ring=False,geoAd=False,\
+                 redGrowth=1,blueGrowth=1): 
+        
+        self.rb=rb
+        if geoAd:
+            rb=True
+            self.rb=True
+        if coffee_ring:
+            self.rb=True
+            rb=True
+            self.background=coffee_ring[2]
+            self.sigma=coffee_ring[1]
+            self.r0=coffee_ring[0]
+        self.slider=slider
+        self.redGrowth=redGrowth
+        self.blueGrowth=blueGrowth
+        try:
+            x,y=size[1],size[0]
+        except TypeError:
+            x,y=size,size;
+        self.z=int(x/4);
+        self.x=x
+        self.y=y
+        z=int(x/4)
+        self.redAdvantage=redAdvantage
+        self.blueAdvantage=blueAdvantage
+        self.defKillers=defKillers
+        self.density=density
+        self.numRatio=numRatio
+        #if threed:
+            #z=size/4;
+        self.size=size
+        self.threed=threed
+        #self.redGrowth=redGrowth
+        #self.blueGrowth=blueGrowth
+        if defKillers==True:
+            self.slider=0;
+        
+        def i2xyz(i,sz,sy):
+            x=int(i/(sz*sy))
+            y=int((i%(sz*sy))/sz)
+            z=int((i%(sz*sy))%sz)
+            return(x,y,z)
+
+        if verbose:
+            print("""initializes a lattce object. This will generate a (size x size) grid of randomly colored bacteria.");
+if radius !=False then there will be an initial circle of red bacteria of radius=input surrounded by blue bacteria.
+If semi==true then there will be a red semicircle surrounded by blue.
+If slider is nonzero then there will be some random death, otherwise there will be only killing.
+If slider is >=1 then there will be only random death.
+If rb==True then rather than starting well mixed full of uniquely colored bacteria, initialize well mixed reds and blues""")
+        
+        
+        if rb:
+            self.lattice=np.random.choice([.2295,.00254],size=(y,x))
+            
+            try:
+                if density!=1:
+                    self.lattice=np.random.choice([0,.2295,.00254],p=[1-density,(density)*(1-numRatio),density*(numRatio)],size=(x,y)) 
+                if coffee_ring:
+                    self.lattice=np.zeros((x,y))
+                    density=cr(size=self.size,r0=self.r0,sigma=self.sigma,background=self.background)
+                    #self.size=1000
+                    for i in range(x):
+                        for j in range(y):
+                            try:
+                                self.lattice[i,j]=np.random.choice([0,.2295,.00254],p=[1-density[i,j],(density[i,j])*(1-numRatio),density[i,j]*(numRatio)])
+                            except IndexError:
+                                self.lattice[i,j]=0;
+                    yi,xi=np.indices([self.size,self.size])
+                    yi=yi-(self.size/2)
+                    xi=xi-(self.size/2)
+                    rad=np.sqrt(xi**2 + yi**2)
+                    rad[rad>(self.r0+(self.sigma/2))]=0
+                    rad[rad>0]=1
+                    self.lattice=self.lattice*rad
+            except ValueError:
+                if coffee_ring:
+                    self.lattice=np.zeros((x,y))
+                    #density=cr2(size=self.size,r0=self.r0,sigma=self.sigma,background=self.background)
+                    #self.size=1000
+                    for i in range(x):
+                        for j in range(y):
+                            try:
+                                self.lattice[i,j]=np.random.choice([0,.2295,.00254],p=[1-density[i,j],(density[i,j])*(1-numRatio[i,j]),density[i,j]*(numRatio[i,j])])
+                            except IndexError:
+                                self.lattice[i,j]=0;
+                    yi,xi=np.indices([self.size,self.size])
+                    yi=yi-(self.size/2)
+                    xi=xi-(self.size/2)
+                    rad=np.sqrt(xi**2 + yi**2)
+                    rad[rad>(self.r0+(self.sigma/2))]=0
+                    rad[rad>0]=1
+                    self.lattice=self.lattice*rad
+                    
+            if threed:
+               self.lattice=np.random.choice([.2295,.00254],size=(x,y,z)) 
+            
+                
+                
+        else:
+            self.lattice=r(x,y)
+            if density!=1:
+                for bug in np.ravel(self.lattice):
+                    if r()>density:
+                        self.lattice[self.lattice==bug]=0
+            killdict=d(list)
+            killdict[0]=0
+            if killlist!=None:
+                killlist=np.array(killlist)
+                for color in np.ravel(self.lattice):
+                    killdict[color]=np.random.choice(killlist)
+                killdict[0]=0
+                self.killdict=killdict
+            else:
+                for color in np.ravel(self.lattice):
+                    killdict[color]=r()
+                killdict[0]=0
+                self.killdict=killdict
+            if threed:
+                self.lattice=r(x,y,z)
+                
+        
+            
+        if radius or halfhalf or geoAd:
+            self.rb=True
+            X,Y=np.ogrid[-int(x/2):int(x/2),-int(y/2):int(y/2)]
+            U=np.ones((x,y))*(X**2+Y**2<=radius**2)
+            if threed:
+                X,Y,Z=np.ogrid[-int(size/2):int(size/2),-int(size/2):int(size/2),-int(z/2):int(z/2)];
+                U=np.ones((size,size,z))*(X**2+Y**2+Z**2<=radius**2)
+                
+            if semi: #NO SUPPORT FOR 3D YET! TODO
+                ones=np.tile(np.ones(self.lattice.shape[0]),(int(self.lattice.shape[0]/2),1))
+                zeros=np.tile(np.zeros(self.lattice.shape[0]),(self.lattice.shape[1]-int(self.lattice.shape[0]/2),1))
+                mask=np.array(np.concatenate([ones,zeros]),dtype=int)
+                U=U*mask
+                if threed:
+                    print("NO SUPPORT FOR 3D YET! On to-do list")
+            elif halfhalf:
+                X,_=np.mgrid[0:y,0:x]
+                X=X.transpose()
+                U=np.ones((x,y))*(X<=y/2)
+                if threed:
+                    X,Y,Z=np.mgrid[0:size,0:size,0:z]
+                    #X=X.transpose()
+                    U=np.ones((size,size,z))*(X<size/2)
+                    #U=U.transpose()
+            elif geoAd:
+                circles=[[i,int(-self.x/2 + i*self.x/20),0] for i in range(20)]
+                #circles=[[10,-int(2*self.x/5),0],[20,-int(3*self.x/10),0],[30,-int(2*self.x/10),0]]
+                U=np.zeros((x,y))
+                for circle in circles:
+                    U+=np.ones((self.x,self.y))*((((X-circle[1])**2)+((Y-circle[2])**2))<circle[0]**2)#+np.ones((self.x,self.y))*((((X-circles[1][1])**2)+((Y-circles[1][2])**2))<circles[1][0]**2)
+                #self.U=U
+                U=U.transpose()
+                self.U=U
+                
+            for (i,element) in enumerate(np.ravel(U)):
+                if threed:
+                    xi,yi,zi=i2xyz(i,int(z),int(size))
+                    self.lattice[xi,yi,zi]=0.22696000000000002*element + .00254
+                else:
+                    if element==1:
+                        self.lattice[int(i/x),int(i%x)]=0.2295 #red
+                    else:
+                        self.lattice[int(i/x),int(i%x)]=.00254 #blue
+            #self.lattice=self.lattice.transpose() #now it is (z,x,y)
+        return
+        
+    def colors2rb(self): #maps every float in self.lattice to either .2295 (red) or .00254 (blue) randomly. 
+        from collections import defaultdict as d
+        self.mapdict=d(list)
+        def rb():
+            if r()>.5:
+                return 0.2295
+            else:
+                return 0.00254
+        def u2rb(u):
+            self.mapdict[u]=rb()
+            return
+        _=list(map(u2rb,np.ravel(self.lattice)))
+        return
+    
+    def heights(self):
+        h=np.zeros(self.y)
+        if self.threed:
+            for i in range(self.size):
+                h[i]=np.where(self.lattice[:,i,int(z/2)]==0.00254)[0][0] 
+        else:
+            for i in range(self.y):
+                if self.x==1:
+                    return np.where(self.lattice==0.00254)[1][0]
+                else:
+                    h[i]=np.where(self.lattice[i,:]==0.00254)[0][0]
+                #h[i]=np.where(self.lattice[i,:]==0.2295)[0][0]
+        return h
+        
+    def i2xyz(self,i,sz,sy):
+        x=int(i/(sz*sy))
+        y=int((i%(sz*sy))/sz)
+        z=int((i%(sz*sy))%sz)
+        return(x,y,z)
+            
+     
+        
+    def evolve(self,n_steps):
+        for t in range(n_steps):
+            
+            #pick lattice site
+            if self.threed:
+               i,j,k=self.i2xyz(np.random.randint(0,(((self.size-2)**2)*(self.z-2))),self.z-2,self.size-2);
+               i+=1; j+=1; k+=1;
+                
+            else:
+                try:
+                    unpadded_size=self.lattice.shape[0]-2;
+                    #u=np.random.randint(0,(self.lattice.shape[0]-2)*(self.lattice.shape[1]-2));
+                    #j=int(u/unpadded_size)+1;
+                    #i=(u%unpadded_size)+1
+                    j=np.random.randint(1,self.x-2)
+                    i=np.random.randint(1,self.y-2)
+                except ValueError:
+                    i=0
+                    j=np.random.randint(0,self.y-1)
+
+            #random death happens if slider>random float in [0,1]
+            if self.slider>r():
+                if self.threed:
+                    self.lattice[i,j,k]=np.random.choice(np.ravel(self.lattice[i-1:i+2,j-1:j+2,k-1:k+2]))
+                else:
+                    self.lattice[i,j]=np.random.choice(np.ravel(self.lattice[i-1:i+2,j-1:j+2]))
+                
+            #else killing/filling a la IBM happens    
+            else:
+            
+                #get the neighborhood of the ith,jth 'pixel'
+                if self.threed:
+                    neighborhood=self.lattice[i-1:i+2,j-1:j+2,k-1:k+2];
+                else:
+                    neighborhood=self.lattice[i-1:i+2,j-1:j+2];
+
+                # find number of species one (red), species two (blue)
+                n_blue=np.size(neighborhood[neighborhood==0.00254]);
+                n_red=np.size(neighborhood[neighborhood==.2295]);
+                n_enemy=np.size(neighborhood[neighborhood!=self.lattice[i,j]]);
+
+                if self.threed:
+                    if self.lattice[i,j,k]==.2295: #site is filled with red bact
+                        if n_blue*r()>13/2:
+                            if self.defKillers==False:
+                                self.lattice[i,j,k]=0; #kill this bacteria
+                            
+                    elif self.lattice[i,j,k]==.00254: #site is filled with a blue bacteria
+                        if n_red*r()>13/2:
+                            if self.defKillers==False:
+                                self.lattice[i,j,k]=0; #kill this bacteria                            
+                            
+                    #filling
+                    elif (self.lattice[i,j,k]==0): #site is empty
+                            if (n_red+n_blue>0):
+                                if (((n_red+n_blue)*r())>13/4): 
+                                    if (n_red*r()>n_blue*r()):
+                                        self.lattice[i,j,k]=.2295
+                                    else:
+                                        self.lattice[i,j,k]=0.00254;
+        
+                                else: 
+                                    self.lattice[i,j,k]=0;
+
+                else:
+                    if (self.rb==True and self.lattice[i,j]==.2295): #site is filled with red bact
+                        if self.x==1:
+                            thresh=.5
+                        else:
+                            thresh=2
+                        if n_blue*r()*self.blueAdvantage>thresh:
+                            if self.defKillers==False:
+                                self.lattice[i,j]=0; #kill this bacteria 
+                            """ note: int2color(0)==(0,0,0), in other words zero is represented as a black pixel
+                            and is interpreted as an empty site (dead bacteria)"""
+                            
+                    elif (self.rb==True and self.lattice[i,j]==.00254): #site is filled with a blue bacteria
+                        if self.x==1:
+                            thresh=.5
+                        else:
+                            thresh=2
+                        if n_red*r()*self.redAdvantage>thresh:
+                            if self.defKillers==False:
+                                self.lattice[i,j]=0; #kill this bacteria  
+                    elif (n_enemy>0 and self.lattice[i,j]!=0):
+                        enemy_weight=0;
+                        for enemy in np.ravel(neighborhood):
+                            if (enemy!=0 and enemy!=self.lattice[i,j]):
+                                try:
+                                    enemy_weight+=self.killdict[enemy];
+                                except TypeError:
+                                    pass
+                                    #enemy_weight=enemy_weight+self.killdict[enemy][0];
+                        if enemy_weight*r()>2:
+                            self.lattice[i,j]=0;
+                            
+                    #filling
+                    elif (self.lattice[i,j]==0): #site is empty
+                            if (self.rb==True and n_red+n_blue>0):
+                                if (((n_red*self.redGrowth+n_blue*self.blueGrowth)>=1)): 
+                                    if (n_red*self.redGrowth*r()>n_blue*self.blueGrowth*r()):
+                                        self.lattice[i,j]=.2295
+                                    else:
+                                        self.lattice[i,j]=0.00254;
+        
+                                else: 
+                                    self.lattice[i,j]=0;
+                            elif(n_enemy>0):
+                                choices=np.ravel(neighborhood[neighborhood!=0])
+                                if choices.size==0:
+                                    self.lattice[i,j]=0
+                                    continue
+                                choices=list(choices)
+                                choices2=[choice*(1-self.killdict[choice]) for choice in choices]
+                                choices2=[choice/len(choices2) for choice in choices2]
+                                zeroprob=1-sum(choices2)
+                                choices2.append(zeroprob)
+                                choices2=np.array(choices2)
+                                choices.append(0)
+                                choices=np.array(choices)
+                                self.lattice[i,j]=np.random.choice(choices,p=choices2)
+                                #self.lattice[i,j]=np.random.choice(np.ravel(neighborhood[neighborhood!=0]))
+        return
+        
+    def view(self):
+        self.lattice[self.lattice==.00254]=.001
+        def int2color(x): #converts lattice integer to RGB tuple
+            red_val=int(1000*x%255)
+            green_val=int(10000*x%255)
+            blue_val=int(100000*x%255)
+            return (red_val,green_val,blue_val)
+        
+        from PIL import Image
+        if self.threed:
+            layer=int(z/2)
+            lu=list(map(int2color,np.ravel(self.lattice[:,:,layer]))) #now a list of RGB tuples
+            imu = Image.new('RGB', [self.lattice.shape[1],self.lattice.shape[0]])
+            imrb = Image.new('RGB', [self.lattice.shape[1],self.lattice.shape[0]])
+            imu.putdata(lu);
+            imu.show
+            
+        elif self.threed==False:
+            lu=list(map(int2color,np.ravel(self.lattice[:,:]))) #now a list of RGB tuples
+            imu = Image.new('RGB', [self.lattice.shape[1],self.lattice.shape[0]])
+            imrb = Image.new('RGB', [self.lattice.shape[1],self.lattice.shape[0]])
+            imu.putdata(lu);
+            imu.show
+            
+        if self.rb!=True:
+            #lrb=list(map(lambda x: int2color(self.mapdict[x]),np.ravel(self.lattice)))
+            #imrb.putdata(lrb)
+            #imrb.show
+            return imu#,imrb
+        
+        self.lattice[self.lattice==.001]=.00254							
+        return imu
+        
+    def sq(self):
+        s=(fftshift(fftn(fftshift(self.lattice))))
+        nx,ny=s.shape[0],s.shape[1]
+        def radial_profile(data, center):
+            y,x = np.indices((data.shape)) # first determine radii of all pixels
+            r = np.sqrt((x-center[0])**2+(y-center[1])**2)
+            ind = np.argsort(r.flat) # get sorted indices
+            sr = r.flat[ind] # sorted radii
+            sim = data.flat[ind] # image values sorted by radii
+            ri = sr.astype(np.int32) # integer part of radii (bin size = 1)
+            # determining distance between changes
+            deltar = ri[1:] - ri[:-1] # assume all radii represented
+            rind = np.where(deltar)[0] # location of changed radius
+            nr = rind[1:] - rind[:-1] # number in radius bin
+            csim = np.cumsum(sim, dtype=np.complex128) # cumulative sum to figure out sums for each radii bin
+            tbin = csim[rind[1:]] - csim[rind[:-1]] # sum for image values in radius bins
+            radialprofile = tbin/nr # the answer
+            return radialprofile
+        rpr=np.array(radial_profile(abs(s**2),(nx/2,ny/2)),dtype=float)
+        q=np.arange(rpr.size)
+        return(rpr,((q*rpr).sum()/rpr.sum()))
+        
+    def diversity(self): #counts number of unique species in lattice
+        seen=set()
+        for color in np.ravel(self.lattice[2:-2,2:-2]):
+            seen.add(color)
+        if self.threed:
+           for color in np.ravel(self.lattice[2:-2,2:-2,2:-2]):
+               seen.add(color) 
+        return len(seen)
+        
+    def cluster_sizes(self): #returns a list: [total number of pixels in cluster 1, pixels in cluster 2, ...]
+        colors=set()
+        for color in np.ravel(self.lattice):
+            colors.add(tuple([i for i in np.ravel(self.lattice) if i==color]))
+        return colors
+    
+    def killhist(self):
+        histdata=[]
+        for color in np.ravel(self.lattice):
+            histdata.append(self.killdict[color])
+        histdata=[h for h in histdata if(h!=0)]
+        histdata=np.array(histdata)
+        #hist=np.histogram(histdata,bins=20,normed=True)
+        plt.hist(histdata,bins=20)
+        return histdata
+        
+##%%  
+def video(lattice):
+    div=[]
+    lattice.colors2rb()#initializes the mapdict from unique colors to redBlue
+    for t in range(1500):
+        if t%10==0:
+            print(t)
+        if t%100==0:
+            imu,imrb=lattice.view()
+            imu.save('dOULx%d.png'%t)
+            imrb.save('dORBLx%d.png'%t)
+        lattice.evolve(10000)
+        div.append(lattice.diversity())
+    return div
+#%%
+def colors2rb(lattice):
+    from collections import defaultdict as d
+    mapdict=d(list)
+    def rb():
+        if r()>.5:
+            return 0.2295
+        else:
+            return 0.00254
+    def u2rb(u):
+        mapdict[u]=rb()
+        return
+    _=list(map(u2rb,np.ravel(lattice.lattice)))
+    return mapdict
+    
+ #%% 
+  
+def interfaceAnalysis(lattice, times):
+    if lattice.x==1:
+        hcat=np.zeros((len(times)))
+        for i in range(len(times)):    
+            hcat[i]=lattice.heights()
+            lattice.evolve(times[i]*lattice.y)
+        return hcat
+    else:
+        hcat=np.zeros((len(times),lattice.size))
+        for i in range(len(times)):
+            print(i)
+            lattice.evolve(times[i]*lattice.lattice.size)
+            hcat[i,:]=lattice.heights()
+        return hcat
+    
+#%%
+def hcatAnalysis(hcat,name):
+    fig,ax=plt.subplots(1,1)
+    ax.semilogy(np.average(acf((hcat-60).transpose()),axis=0))
+    ax.set_xlabel("delta_t")
+    ax.set_ylabel("g_h(detla_t)")
+    g_h_rawdata=acf(hcat.transpose()-60)
+    sio.savemat("g_h raw data"+name,{"g_h":g_h_rawdata})
+    fig.savefig(name)
+    return fig,g_h_rawdata
+        
+#%%
+def cr(size=600,r0=200,sigma=30,background=0):
+    y,x=np.indices((size,size))
+    y,x=y-(size/2),x-(size/2)
+    r=np.sqrt(x**2 + y**2)
+    r=(background+np.exp(-((r-r0)**2)/(sigma**2)))/(1+background)
+    return r
+    
+    
+#%%
+def cr1(size=600,r0=200,sigma=30,background=0):
+    cut_off=r0+(sigma)
+    r=np.arange(size)
+    r=(background+np.exp(-((r-r0)**2)/(sigma**2)))/(1+background)
+    r[int(cut_off):]=background/5
+    r=r/r.sum()
+    return r
+#%%
+def cr2(size=600,r0=200,sigma=30,background=0):
+    y,x=np.indices((size,size))
+    y,x=y-(size/2),x-(size/2)
+    r=np.sqrt(x**2 + y**2)
+    #r=np.arange(size)
+    z=np.zeros(r.shape)
+    for i in range(size**2):
+        if (r.flat[i]-sigma<r0 and r.flat[i]+sigma>r0):
+            z.flat[i]=1
+    return (background+z)/(1+background)
+
+
+#%% tournament    
+"""
+1. "Create" a strain with a flat distribution of killing efficiencies / growth efficiencies (KE/GE). These are all members of the same strain, and cannot kill each other. Descendants have the same KE/GE as their parent.
+2. From this distribution, populate lattices at randomly selected densities and against randomly selected opponents. Whatever the overall density is, let's make it half the evolving strain and half the opponents to start.
+3. When the simulation ends, update the killing efficiency distribution, and use that new distribution to seed the next round.
+4. Repeat!
+"""
+
+population=r(2,1e6)
+#%%
+ff=np.zeros((20,49))
+for j in range(20):
+	for i,phi_i in enumerate(phi):
+		l=Lattice(200, rb=True, numRatio=phi_i, redAdvantage=.3+.1*j, density=.95)
+		l.evolve(500*(200**2))
+		ff[j,i]=(l.lattice[l.lattice==.2295].size/(200**2))
+		print((i,j),(phi_i,l.lattice[l.lattice==.2295].size/(200**2)))
+		
+#%%
+ff=np.zeros((10,49))
+for j in range(10):
+	for i,phi_i in enumerate(phi):
+		l=Lattice(200, rb=True, numRatio=.9, redAdvantage=2, density=phi_i)
+		while(l.lattice[l.lattice==0].size/(200**2)>.05):
+			l.evolve(100)
+		ff[j,i]=(l.lattice[l.lattice==.2295].size/(l.lattice[l.lattice==.2295].size+l.lattice[l.lattice==.00254].size))
+		print((i,j),(phi_i,l.lattice[l.lattice==.2295].size/(l.lattice[l.lattice==.2295].size+l.lattice[l.lattice==.00254].size)))
+		
+#%% strip sim
+
+density=np.linspace(0,1,1000)
+nR_init=np.zeros(1000)
+nr_final=np.zeros(1000)
+
+for j in range(10):
+	l=Lattice((100,1000),rb=True, redAdvantage=1.3, numRatio=.75)
+	for i in range(1000):
+		l.lattice[:,i]=np.random.choice([0,.2295,.00254],p=[1-density[i],(density[i])*(1-l.numRatio),density[i]*(l.numRatio)],size=100)
+	#im1=l.view()
+	
+	for i in range(1000):
+		nR_init[i]+=np.sum(l.lattice[:,i]==.2295)/(np.sum(l.lattice[:,i]==.00254)+np.sum(l.lattice[:,i]==.2295))
+	l.evolve(50*100*1000)
+	
+	for i in range(1000):
+		nr_final[i]+=np.sum(l.lattice[:,i]==.2295)/(np.sum(l.lattice[:,i]==.00254)+np.sum(l.lattice[:,i]==.2295))
+	#im2=l.view()
+nr_final/=10
+nR_init/=10
+
+#%%
+#%%
+ff=np.zeros((10,49))
+for j in range(10):
+	for i,phi_i in enumerate(phi):
+		l=Lattice(200, rb=True, numRatio=phi_i, redAdvantage=1.7+(.1*j), density=.1)
+		l.evolve(30*(200**2))
+		ff[j,i]=(l.lattice[l.lattice==.2295].size/(200**2))
+		print((i,j),(phi_i,l.lattice[l.lattice==.2295].size/(200**2)))
+#%% plotting with colorbar
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+#my_cmap=cm.bone
+my_cmap=cm.coolwarm
+
+fig,ax=plt.subplots(figsize=(9,9))
+for i in range(20):
+    ax.plot(1-phi,dat2[i,:],c=my_cmap(i/20),lw=3,marker='o')
+
+sm = plt.cm.ScalarMappable(cmap=my_cmap, norm=plt.Normalize(vmin=.7, vmax=2.7))
+# fake up the array of the scalar mappable. Urgh...
+sm._A = []
+cbar=plt.colorbar(sm)
+#fig.colorbar(sm)
+cbar.set_label("Red Killing Advantage",size=18)
+ax.grid(lw=2)
+ax.set_xlabel("Initial Proportion of Red Cells",size=18)
+ax.set_ylabel("Final Proportion of Red Cells",size=18)
+
+#%%
+def array_foo(start,process_num):
+    ff=np.zeros((5,49))
+    phi=np.linspace(0.05,.95,49)
+    for j in range(5):
+    	    for i,phi_i in enumerate(phi):
+    		    l=Lattice(200, rb=True, numRatio=phi_i, redAdvantage=start+(.1*j), density=.1)
+    		    l.evolve(40*(200**2))
+    		    ff[j,i]=(l.lattice[l.lattice==.2295].size/(200**2))
+    		    print((i,j,process_num),(phi_i,l.lattice[l.lattice==.2295].size/(200**2)))
+    return(ff)
+#%%
+pool=mp.Pool(processes=4)
+results=[pool.apply_async(array_foo,args=(start,process_num)) for start,process_num in zip([.7,1.2,1.7,2.2],range(4))]
+         
+#%% local neighborhood histogram
+l=Lattice(400,rb=True,numRatio=.8,density=.1)
+l.evolve(10*400**2)
+nbh_hist_sparse=np.zeros(9)
+nbh_hist_dense=np.zeros(9)
+nbh_bins=np.arange(9)
+for i in range(1,l.lattice.shape[0]):
+    for j in range(1,l.lattice.shape[1]):
+        nbh=l.lattice[i-1:i+2,j-1:j+2]
+        me=l.lattice[i,j]
+        if me==.2295:
+            like_me=int(np.sum((nbh==me)*(nbh!=0))-1)
+            nbh_hist_sparse[like_me]+=1
+nbh_hist_sparse/=sum(nbh_hist_sparse)
+l=Lattice(400,rb=True,numRatio=.8,density=.95)
+l.evolve(10*400**2)
+for i in range(1,l.lattice.shape[0]):
+    for j in range(1,l.lattice.shape[1]):
+        nbh=l.lattice[i-1:i+2,j-1:j+2]
+        me=l.lattice[i,j]
+        if me==.2295:
+            like_me=int(np.sum((nbh==me)*(nbh!=0))-1)
+            nbh_hist_dense[like_me]+=1
+nbh_hist_dense/=sum(nbh_hist_dense)
+#%%
+fig,ax=plt.subplots(figsize=(10,10))
+b1=ax.bar(np.arange(9)+.5,nbh_hist_dense,.5,color='b')
+b2=ax.bar(nbh_bins,nbh_hist_sparse,.5,color='g')
+ax.set_xlabel("Number of kin in neighborhood",size=16)
+ax.set_ylabel("Frequency",size=16)
+ax.legend((b1,b2),['Dense','Sparse'],fontsize=16)
+ax.set_xlim(0,8)
