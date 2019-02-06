@@ -44,22 +44,22 @@ def grad_W(v,c, alpha):
     left1 = alpha*(v**(alpha-1))
     right1 = np.dot(c,(1-v)**alpha)
     t1 = left1*right1
-    left2 = alpha*(v**alpha)
-    right2 = np.dot(c,(1-v)**(alpha-1))
+    left2 = alpha*(1-v)**(alpha-1)
+    right2 = np.dot(c,v**alpha)
     t2 = left2*right2
-    return(-t1+t2)
+    return(t1-t2)
     
 def W_and_grad(v, c=build_c(1,10),alpha=1):
     return( W(c,alpha,v), grad_W(c,alpha,v))
     
 #%%
-def spec_optimized(beta=1, N=10, mode='bipartite', alpha=1, max_iter = 1000):
+def spec_optimized(beta=1, N=10, mode='bipartite', alpha=1, max_iter = 100):
     bnds = tuple([(0,1) for i in range(N)])
     c = build_c(beta,N,mode)
     best = 999
     for i in range(max_iter):
-        res = minimize(W, .np.random.random(N), method='TNC', jac=grad_W,
-                   options={'disp': True, 'eps':1e-12, 'gtol':1e-9, 'ftol':1e-9},
+        res = minimize(W, np.random.random(N), method='nelder-mead', jac=grad_W,
+                   options={'disp': False, 'eps':1e-12, 'gtol':1e-9, 'ftol':1e-9},
                    args = (c,alpha), bounds=bnds)
         if res.fun<best:
             best = res.fun
@@ -92,3 +92,16 @@ def make_plot(mode='bipartite'):
         plt.plot(alphas,specs[i],marker='o',lw=0, label = betas[i])
     plt.legend()
     return(fig)
+#%%
+def gradient_descent(eps, v0, beta=1, N=10, mode='bipartite', alpha=1, max_iter = 1000):
+    ws = []
+    c = build_c(beta,N,mode)
+    for i in range(max_iter):
+        v0 = v0 + eps*grad_W(v0,c,alpha)
+        v0[v0>1]=1
+        v0[v0<0]=0
+        ws.append(W(v0,c,alpha))
+    return(v0,ws)
+    
+def spec(v):
+    return(np.average([2*(max([vi, (1-vi)])-.5) for vi in v]))
